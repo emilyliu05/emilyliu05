@@ -16,6 +16,7 @@ library(sf)
 library(mapview)
 library(leaflet)
 library(censusapi)
+library(ggplot2)
 Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
 ```
 
@@ -68,11 +69,10 @@ for(year in years) {
 
 Filters the data in the files and makes a date column 
 ```{r}
-pge_data_e_res <-
+pge_data_r <-
   pge_data_raw %>%
   filter(
-    CUSTOMERCLASS %in%
-      c("Elec- Commercial", "Elec- Residential")
+    CUSTOMERCLASS %in% c("Gas- Residential", "Elec- Residential")
   ) %>%
   group_by(
     MONTH,
@@ -91,37 +91,49 @@ pge_data_e_res <-
         sep="-"
       ) %>% as.Date()
   )
+```
+Filter the residential 
+```{r}
+pge_residential <-
+  filter(pge_data_r,
+    CUSTOMERCLASS %in% 
+      c(
+        "Elec- Residential", "Gas- Residential"
+      )
+    )
 ```
 
 Makes the residential graph 
 ```{r}
-pge_data_e_res %>% 
-  filter(CUSTOMERCLASS %in% "Elec- Residential") %>% 
+pge_chart1 <-
+pge_residential %>% 
   ggplot() +
-  geom_line(
+  geom_bar(
     aes(
       x = DATE,
       y = TOTALKBTU,
-      #color = "red"
-    )
+      fill = CUSTOMERCLASS
+    ),
+    stat = "identity",
+    position = "stack"
   ) +
   labs(
     x = "Month",
     y = "kBTU",
-    title = "PG&E Monthly Residential Usage"
+    title = "PG&E Monthly Residential Usage (Electricity + Gas)",
+    fill = "Energy Usage"
   ) #+
   # theme(
   #   legend.position = "bottom"
   # )
+pge_chart1
 ```
-
-Same for commercial 
+For the commercial electricity usage data, the peaks at 2020 are significantly lower compared to the rest of the years (particularly around March) because everyone stayed at home, so there was no need to run as much electricity for the commercial sector.The caveat is that I'm still not able to figure out how to rbind the gas and electric together in one graph, so I was only able to knit the code with the electricity usage. The code below are my attempts to include the gas data. 
 ```{r}
-pge_data_e_comm <-
+pge_data_c <-
   pge_data_raw %>%
   filter(
-    CUSTOMERCLASS %in%
-      c("Elec- Commercial", "Elec- Residential")
+    CUSTOMERCLASS %in% c("Gas- Commercial", "Elec- Commercial")
   ) %>%
   group_by(
     MONTH,
@@ -141,164 +153,35 @@ pge_data_e_comm <-
       ) %>% as.Date()
   )
 ```
-
+Filter the commercial 
 ```{r}
-pge_data_e_comm %>% 
-  filter(CUSTOMERCLASS %in% "Elec- Commercial") %>% 
+pge_commercial <-
+  filter(pge_data_c,
+    CUSTOMERCLASS %in% 
+      c(
+        "Elec- Commercial", "Gas- Commercial"
+      )
+    )
+```
+Makes the residential graph 
+```{r}
+pge_chart2 <-
+pge_commercial %>% 
   ggplot() +
-  geom_line(
+  geom_bar(
     aes(
       x = DATE,
       y = TOTALKBTU,
-      #color = "red"
-    )
-    #color = "bljue"
+      fill = CUSTOMERCLASS
+    ),
+    stat = "identity",
+    position = "stack"
   ) +
   labs(
     x = "Month",
     y = "kBTU",
-    title = "PG&E Monthly Commercial Usage"
-  ) #+
-  # theme(
-  #   legend.position = "bottom"
-  # )
+    title = "PG&E Monthly Commercial Usage (Electricity + Gas)",
+    fill = "Energy Usage"
+  )
+pge_chart2
 ```
-For the commercial electricity usage data, the peaks at 2020 are significantly lower compared to the rest of the years (particularly around March) because everyone stayed at home, so there was no need to run as much electricity for the commercial sector.The caveat is that I'm still not able to figure out how to rbind the gas and electric together in one graph, so I was only able to knit the code with the electricity usage. The code below are my attempts to include the gas data. 
-
-# ```{r}
-# pge_data_g_comm <-
-#   pge_data_raw %>%
-#   filter(
-#     CUSTOMERCLASS %in%
-#       c("Elec- Commercial", "Elec- Residential")
-#   ) %>%
-#   group_by(
-#     MONTH,
-#     YEAR,
-#     CUSTOMERCLASS
-#   ) %>%
-#   summarize(
-#     TOTALKBTU = sum(TOTALKBTU, na.rm = T)
-#   ) %>%
-#   mutate(
-#     DATE =
-#       paste(
-#         YEAR,
-#         MONTH,
-#         "01",
-#         sep="-"
-#       ) %>% as.Date()
-#   )
-# ```
-# 
-# ```{r}
-# pge_data_g_comm %>% 
-#   filter(CUSTOMERCLASS %in% "Gas- Commercial") %>% 
-#   ggplot() +
-#   geom_line(
-#     aes(
-#       x = DATE,
-#       y = TOTALKBTU,
-#       #color = "black"
-#     )
-#     #color = "bljue"
-#   ) +
-#   labs(
-#     x = "Month",
-#     y = "kBTU",
-#     title = "PG&E Monthly Commercial Usage"
-#   ) +
-#   theme(
-#     legend.position = "bottom"
-#   )
-# ```
-# 
-# ```{r}
-# pge_data_e_comm <-
-#   pge_data_raw %>%
-#   filter(
-#     CUSTOMERCLASS %in%
-#       c("Gas- Commercial", "Elec- Commercial")
-#   ) %>%
-#   group_by(
-#     MONTH,
-#     YEAR,
-#     CUSTOMERCLASS
-#   ) %>%
-#   summarize(
-#     TOTALKBTU = sum(TOTALKBTU, na.rm = T)
-#   ) %>%
-#   mutate(
-#     DATE =
-#       paste(
-#         YEAR,
-#         MONTH,
-#         "01",
-#         sep="-"
-#       ) %>% as.Date()
-#   )
-# ```
-# 
-# Makes the commercial graph 
-# ```{r}
-# pge_data_comm %>% 
-#   filter(CUSTOMERCLASS %in% c("Gas- Commercial","Elec- Commercial") %>% 
-#   ggplot() +
-#   geom_line(
-#     aes(
-#       x = DATE,
-#       y = TOTALKBTU,
-#     )
-#     #color = bljue,
-#   ) +
-#   labs(
-#     x = "Month",
-#     y = "kBTU",
-#     title = "PG&E Monthly Commercial Usage"
-#   ) 
-# ```
-# 
-# Same for commercial 
-# ```{r}
-# pge_data_comm <-
-#   pge_data_raw %>%
-#   filter(
-#     CUSTOMERCLASS %in%
-#       c("Gas- Commercial", "Gas- Residential")
-#   ) %>%
-#   group_by(
-#     MONTH,
-#     YEAR,
-#     CUSTOMERCLASS
-#   ) %>%
-#   summarize(
-#     TOTALKBTU = sum(TOTALKBTU, na.rm = T)
-#   ) %>%
-#   mutate(
-#     DATE =
-#       paste(
-#         YEAR,
-#         MONTH,
-#         "01",
-#         sep="-"
-#       ) %>% as.Date()
-#   )
-# ```
-# 
-# ```{r}
-# pge_data_comm %>% 
-#   filter(CUSTOMERCLASS %in% "Gas- Commercial") %>% 
-#   ggplot() +
-#   geom_line(
-#     aes(
-#       x = DATE,
-#       y = TOTALKBTU,
-#     )
-#     #color = bljue,
-#   ) +
-#   labs(
-#     x = "Month",
-#     y = "kBTU",
-#     title = "PG&E Monthly Commercial Usage"
-#   ) 
-# ```
