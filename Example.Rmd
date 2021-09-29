@@ -1,10 +1,19 @@
 ---
-title: "Thursday Example"
+title: "Assignment 1"
 output: html_document
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = F)
+```
+
+````{r}
+
+library(tidyverse)
+
+health_full <- read_csv("https://chronicdata.cdc.gov/api/views/swc5-untb/rows.csv?accessType=DOWNLOAD&bom=true&format=true")
+
+head(health_full)
 ```
 
 ## R Markdown
@@ -13,8 +22,179 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-```{r cars}
-summary(cars)
+```{r}
+write_csv(health_full, "health_full.csv")
+
+health_full_again <- read_csv("health_full.csv")
+
+rm(health_full_again)
+```
+Starting assignment 1
+
+```{r}
+library(tidyverse)
+library(plotly)
+
+year <- 2020
+quarters <- 1:4
+type <- "Electric"
+
+pge_20_elec <- NULL
+
+for(quarter in quarters) {
+  
+  filename <- 
+    paste0(
+      "pge/PGE_",
+      year,
+      "_Q",
+      quarter,
+      "_",
+      type,
+      "UsageByZip.csv"
+    )
+
+  print(filename)
+  
+  temp <- read_csv(filename)
+  
+  pge_20_elec <- rbind(pge_20_elec,temp)
+  # Note rbind requires field names to be consistent for every new thing that you add.
+
+  saveRDS(pge_20_elec, "pge_20_elec.rds")
+}
+```
+```{r}
+pge_filter <- 
+  filter(
+    pge_20_elec,
+    CUSTOMERCLASS %in% 
+      c(
+        "Elec- Residential",
+        "Elec- Commercial"
+      )
+  )
+names(pge_filter)
+
+head(pge_filter)
+
+pge_filter[1,1]
+
+pge_filter[1:5,1:5]
+
+pge_filter[1:5,c("ZIPCODE","MONTH","YEAR")]
+
+pge_filter[1:5, ]
+
+pge_filter[1:5, ]$YEAR
+
+```
+```{r}
+pge_select <-
+  select(
+    pge_filter,
+    ZIPCODE,
+    MONTH,
+    CUSTOMERCLASS,
+    COMBINED,
+    TOTALCUSTOMERS,
+    TOTALKWH,
+    AVERAGEKWH
+  )
+
+pge_select <-
+  select(
+    pge_filter,
+    -YEAR
+  )
+
+table(pge_select$COMBINED)
+
+pge_select <-
+  select(
+    pge_filter,
+    -c(YEAR, COMBINED, AVERAGEKWH)
+  )
+
+pge_group <-
+  group_by(
+    pge_select,
+    MONTH,
+    CUSTOMERCLASS
+  )
+
+pge_summarize <-
+  summarize(
+    pge_group,
+    TOTALKWH = 
+      sum(
+        TOTALKWH, 
+        na.rm = T
+      ),
+    TOTALCUSTOMERS =
+      sum(
+        TOTALCUSTOMERS,
+        na.rm = T
+      )
+  )
+
+pge_mutate <-
+  mutate(
+    pge_summarize,
+    AVERAGEKWH =
+      TOTALKWH/TOTALCUSTOMERS
+  )
+
+
+pge_wide <-
+  pivot_wider(
+    pge_summarize,
+    names_from = CUSTOMERCLASS,
+    values_from = TOTALKWH
+  )
+
+pge_wide
+
+pge_tidy <-
+  pivot_longer(
+    pge_wide,
+    c("Elec- Commercial", "Elec- Residential"),
+    names_to = "CUSTOMERCLASS",
+    values_to = "TOTALKWH"
+  )
+```
+
+```{r}
+pge_final <-
+  pge_20_elec %>% 
+  filter(
+    CUSTOMERCLASS %in% 
+      c(
+        "Elec- Residential",
+        "Elec- Commercial"
+      )
+  ) %>% 
+  select(
+    -c(YEAR, COMBINED, AVERAGEKWH)
+  ) %>% 
+  group_by(MONTH, CUSTOMERCLASS) %>% 
+  summarize(
+    TOTALKWH = 
+      sum(
+        TOTALKWH, 
+        na.rm = T
+      ),
+    TOTALCUSTOMERS =
+      sum(
+        TOTALCUSTOMERS,
+        na.rm = T
+      )
+  ) %>% 
+  mutate(
+    AVERAGEKWH =
+      TOTALKWH/TOTALCUSTOMERS
+  )
+pge_final
 ```
 
 ## Including Plots
