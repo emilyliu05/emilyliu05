@@ -1,0 +1,220 @@
+---
+title: "A2 Support"
+author: "Emily Liu"
+date: "10/09/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+```{r, include = F}
+knitr::opts_chunk$set(warning = F, message = F)
+```
+```{r}
+library(tigris)
+library(tidyverse)
+library(sf)
+library(mapview)
+library(leaflet)
+library(censusapi)
+Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+```
+This gets the population and correct shapefiles for 2020 for San Mateo County 
+```{r}
+dec_vars_2020 <-
+  listCensusMetadata(name = "2020/dec/pl",
+    type = "variables")
+
+smc_pop_2020 <-
+  getCensus(name = "dec/pl",
+    vintage = 2020,
+    region = "block:*", 
+    regionin = "state:06+county:081",
+    vars = "P1_001N"
+    ) %>% 
+  transmute(
+    GEOID20 = paste0(state,county,tract,block),
+    pop_2020 = P1_001N
+  )
+
+# dec_vars_2020 %>% 
+#   filter(grepl("P1", name)) %>%
+#   select(name, label) %>%
+#   arrange(name)
+
+blocks_2020 <- blocks("CA", "San Mateo", year = 2020, progress_bar = F)
+```
+Same for 2010
+```{r}
+dec_vars_2010 <-
+  listCensusMetadata(name = "2010/dec/pl",
+    type = "variables")
+
+smc_pop_2010 <-
+  getCensus("dec/pl",
+    vintage = 2010,
+    region = "block:*", 
+    regionin = "state:06+county:081",
+    vars = "group(P1)") %>% 
+  transmute(
+    GEOID10 = paste0(state,county,tract,block),
+    pop_2010 = P001001
+  )
+
+# dec_vars_2010 %>% 
+#   filter(grepl("P1", name)) %>%
+#   select(name, label) %>%
+#   arrange(name)
+
+blocks_2010 <- blocks("CA", "San Mateo", year = 2010, progress_bar = F)
+```
+This sets up the blocks for North Fair Oaks for both 2010 and 2020, and includes a column for population 
+```{r}
+nfo_boundary <- places("CA", progress_bar = F) %>% 
+  filter(NAME == "North Fair Oaks")
+
+nfo_blocks_2010 <- blocks_2010 %>% 
+  st_centroid() %>%
+  .[nfo_boundary, ] %>%
+  st_drop_geometry() %>%
+  left_join(blocks_2010 %>% select(GEOID10)) %>%
+  st_as_sf() %>%
+  select(GEOID10) %>%
+  left_join(smc_pop_2010)
+
+
+place_blocks_2020 <- blocks_2020 %>%
+  .[nfo_blocks_2010, ] %>% 
+  select(GEOID20) %>% 
+  left_join(smc_pop_2020)
+
+# nfo_pop_2020 <- smc_pop_2020 %>%
+#   left_join(blocks_2020 %>% select (block = GEOID20)) %>%
+#   st_as_sf() %>%
+#   st_centroid() %>%
+#   .[nfo_boundary, ] %>%
+#   st_set_geometry(NULL) %>%
+#   left_join(blocks_2020 %>% select(block = GEOID20)) %>%
+#   st_as_sf()
+# 
+# nfo_pops_2010 <-
+#   smc_pop_2010 %>%
+# left_join(smc_blocks_2010 %>% select(GEOID10)) %>%
+#   st_as_sf()
+# 
+# nfo_pops_2020 <-
+#   smc_pop_2020 %>%
+# left_join(smc_blocks_2020 %>% select(GEOID20)) %>%
+#   st_as_sf()
+```
+
+```{r}
+# nfo_pop_2010 <- nfo_pops_2010 %>%
+#   st_centroid() %>%
+#   #left_join(blocks_2010 %>% select (block = GEOID10)) %>%
+#   #st_as_sf() %>%
+#   .[nfo_boundary, ] %>%
+#   st_set_geometry(NULL) %>%
+#   left_join(nfo_pops_2010 %>% select(block = GEOID10)) %>%
+#   st_as_sf()
+# 
+# mapview(nfo_boundary) + mapview(smc_blocks_2010, alpha.regions = 0, color = "red", lwd = 2)
+```
+This is the cookie cutter method of placing the 2020 population within the 2010 blocks to get the population for 2020 over the correct area 
+```{r}
+nfo_pop_2020_intersect <- place_blocks_2020 %>% 
+  st_transform(26910) %>% 
+  mutate(original_area = st_area(.)) %>% 
+  st_intersection(
+    nfo_blocks_2010 %>%
+      select(GEOID10) %>% 
+      st_transform(26910)
+  ) %>% 
+  mutate(
+    leftover_area = st_area(.),
+    perc_area = as.numeric(leftover_area / original_area),
+    pop = pop_2020 * perc_area
+  )
+
+ # test <-
+ #   place_blocks_2020 %>% 
+ #   filter(GEOID20 %in% "060816105002012")
+
+place_blocks_2020_reshaped <- nfo_pop_2020_intersect %>%
+  st_drop_geometry() %>% 
+  group_by(GEOID10) %>% 
+  summarize(
+    pop_2020 = sum(pop, na.rm=T) %>% round()
+  )
+```
+This subtracts the 2020 population from 2010 population and gets the population density that needs to be mapped for the area
+```{r}
+projection <- "+proj=utm +zone=10 +ellps=GRS80 +datum=NAD83 +units=ft +no_defs"
+
+place_pop_2010_2020 <- nfo_blocks_2010 %>% 
+  left_join(place_blocks_2020_reshaped) %>% 
+  mutate(
+    absolute_pop = (pop_2020 - pop_2010) / as.numeric(st_area(.)) * 43560
+  )
+```
+This creates the palette for the map
+```{r}
+max <- max(abs(place_pop_2010_2020$absolute_pop))
+absolute_pal <- colorNumeric(
+  palette = "Blues",
+  domain = c(-max,max)
+)
+```
+This creates the map and legend
+```{r}
+leaflet(place_pop_2010_2020) %>% 
+  addProviderTiles(provider = providers$CartoDB.Positron) %>% 
+  addPolygons(
+    fillColor = ~absolute_pal(absolute_pop),
+    label = ~round(absolute_pop),
+    color = "white",
+    opacity = 0.5,
+    fillOpacity = 0.75,
+    weight = 1
+  ) %>% 
+  addLegend(
+    pal = absolute_pal,
+    value = c(-max,max),
+    title = "Total population, 2020"
+  )
+```
+If you want to try multiple layers, you'll need to change some steps upstream to collect more than one field of information for each block. Then, you final leaflet step would look something like this:
+```{r}
+# leaflet(___) %>% 
+#   addProviderTiles(provider = providers$CartoDB.Positron) %>% 
+#   addPolygons(
+#     fillColor = ~___(___),
+#     label = ~round(___),
+#     color = "white",
+#     opacity = 0.5,
+#     fillOpacity = 0.75,
+#     weight = 1,
+#     group = "___"
+#   ) %>% 
+#   addPolygons(
+#     fillColor = ~___(___),
+#     label = ~round(___),
+#     color = "white",
+#     opacity = 0.5,
+#     fillOpacity = 0.75,
+#     weight = 1,
+#     group = "___"
+#   ) %>% 
+#   addLegend(
+#     pal = ___,
+#     value = c(-___,___),
+#     title = "___"
+#   ) %>% 
+#   addLayersControl(
+#     baseGroups = c("___","___"),
+#     position = "___",
+#     options = layersControlOptions(
+#       collapsed = F
+#     )
+#   )
+```
+You can also put layers in groups. But note: `addLayersControl()` currently does not support the toggling on/off of layers when you use `baseGroups`, which are the radio button selections. Instead you'd need to use `overlayGroups`, which are checkboxes.
