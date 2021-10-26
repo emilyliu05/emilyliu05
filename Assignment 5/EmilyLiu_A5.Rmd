@@ -107,7 +107,7 @@ Overall, there is a positive relationship between PM2.5 levels and Asthma cases.
 ```{r}
 plot(density(residuals(model)))
 ```
-The residuals are supposed to be in a normal distribution, so in the shape of a bell curve, but this graph of residuals isn't a normal distribution. 
+The residuals are supposed to be in a normal distribution, so it shoul dbe in the shape of a bell curve, but this graph of residuals isn't a normal distribution. 
 ```{r}
 ces4_bay_pm25_log <-
   ces4_clean %>% 
