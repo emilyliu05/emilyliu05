@@ -1,0 +1,165 @@
+---
+title: "EmilyLiu_A5"
+author: "Emily Liu"
+date: "10/23/2021"
+output: html_document
+---
+
+```{r}
+library(tidyverse)
+library(censusapi)
+library(sf)
+library(tigris)
+library(mapview)
+
+library(readxl)
+
+# for Mac Users, put the xlsx file in your working directory
+ces4 <- read_excel("calenviroscreen40resultsdatadictionary_F_2021.xlsx")
+
+ces4_clean <- ces4 %>% 
+  dplyr::select(!ends_with("Pctl"))
+
+sum(is.na(ces4_clean$PM2.5))
+
+ca_tracts <- tracts("CA")
+
+bay_county_names <-
+  c(
+    "Alameda",
+    "Contra Costa",
+    "Marin",
+    "Napa",
+    "San Francisco",
+    "San Mateo",
+    "Santa Clara",
+    "Solano",
+    "Sonoma"
+  )
+
+#map for pm2.5 in the Bay Area 
+ces4_bay_pm25 <-
+  ces4_clean %>% 
+  filter(`California County` %in% bay_county_names) %>% #filters for counties in the Bay Area only 
+  select(`Census Tract`, PM2.5) %>% 
+  left_join(
+    ca_tracts %>% 
+      transmute(GEOID = GEOID %>% as.numeric()), 
+    by = c("Census Tract" = "GEOID")
+  ) %>% 
+  st_as_sf()
+
+mapview(ces4_bay_pm25, zcol = "PM2.5")
+```
+This map shows the concentrations of the PM2.5 indicator in the Bay Area based on CalEnviroScreen data. The indicator is based on the annual mean concentration of PM2.5 (weighted average of measured monitor concentrations and satellite observations in terms of µg/m3), from 2015-2017. The higher concentrations of PM2.5 are represented in the green/turquoise color, and while there seems to be higher concentrations of PM2.5 in counties that surround the Bay, it also seems to impact more places in the East Bay area, like Oakland/Berkley/Richmond area and in the Vallejo/Sonoma area. 
+```{r}
+#map for asthma in the Bay 
+sum(is.na(ces4_clean$Asthma))
+
+ces4_bay_asthma <-
+  ces4_clean %>% 
+  filter(`California County` %in% bay_county_names) %>% #filters for counties in the Bay Area only 
+  select(`Census Tract`, Asthma) %>% 
+  left_join(
+    ca_tracts %>% 
+      transmute(GEOID = GEOID %>% as.numeric()), 
+    by = c("Census Tract" = "GEOID")
+  ) %>% 
+  st_as_sf()
+
+mapview(ces4_bay_asthma, zcol = "Asthma")
+```
+This map shows the concentrations of the Asthma indicator in the Bay Area based on CalEnviroScreen data. The indicator is based on the age-adjusted rate of ED visits for asthma per 10,000 (averaged over 2015-2017). The higher concentrations of asthma are represented in the yellow color, and are seen predominantly in the East Bay area, like Oakland/Berkley/Richmond area and in the Vallejo area. On the west side of the Bay, there are more cases of asthma in parts of San Francisco compared to the more affluent areas of Mountain and Palo Alto, but not as high as in the East Bay. The places with higher cases are typically of lower socioeconomic status and have a higher minority population. 
+```{r}
+#joins the PM and asthma data sets to make a scatter plot of both 
+bay_PM_asthma <- 
+  ces4_bay_asthma %>% 
+  st_drop_geometry() %>% 
+  left_join(ces4_bay_pm25, by = c("Census Tract"))
+#%>% 
+ # left_join(ces4_bay_pm25 %>% select("Census Tract"))
+#%>% 
+  #     transmute(GEOID = GEOID %>% as.numeric()),
+  #   by = c("Census Tract" = "GEOID")
+  # ) %>% 
+  # st_as_sf()
+
+#generates scatter plot with PM2.5 on the x-axis and Asthma on the y-axis
+ggplot(
+  data = bay_PM_asthma,
+  aes(
+      x = PM2.5,
+      y = Asthma
+    )
+) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+The scatter plot is more bottom heavy, meaning that there's a larger concentration of close clusters towards the lower y-values, with some higher outliers towards the middle, and makes the line of best-fit have a smaller slope. 
+
+```{r}
+#generates the regression coefficients table 
+model <- lm(Asthma ~ PM2.5, bay_PM_asthma)
+
+summary(model)
+```
+Overall, there is a positive relationship between PM2.5 levels and Asthma cases. Since the R^2 value is 0.096, the scatter plots don't show a strong positive correlation since it's closer to 0 than 1 and 9.6% of the variation in Asthma is explained by the variation in PM2.5. Also, the line of best fit indicates that an increase of 1 in PM2.5 concentration  is associated with an increase of 19.862 in asthma cases. 
+```{r}
+plot(density(residuals(model)))
+```
+The residuals are supposed to be in a normal distribution, so in the shape of a bell curve, but this graph of residuals isn't a normal distribution. 
+```{r}
+ces4_bay_pm25_log <-
+  ces4_clean %>% 
+  filter(`California County` %in% bay_county_names) %>% 
+  select(`Census Tract`, PM2.5) %>% 
+  left_join(
+    ca_tracts %>% 
+      transmute(GEOID = GEOID %>% as.numeric()), 
+    by = c("Census Tract" = "GEOID")
+  ) %>% 
+  mutate (
+    ces4_bay_pm25, log_PM = log(PM2.5)
+  ) %>%
+  st_as_sf()
+
+#mapview(ces4_bay_pm25_log, zcol = "PM2.5")
+
+ces4_bay_asthma_log <-
+  ces4_clean %>% 
+  filter(`California County` %in% bay_county_names) %>% 
+  select(`Census Tract`, Asthma) %>% 
+  left_join(
+    ca_tracts %>% 
+      transmute(GEOID = GEOID %>% as.numeric()), 
+    by = c("Census Tract" = "GEOID")
+  ) %>% 
+  mutate(
+    ces4_bay_asthma, log_asthma = log(Asthma)
+  ) %>%
+  st_as_sf()
+
+#mapview(ces4_bay_asthma_log, zcol = "Asthma")
+
+bay_PM_asthma_log <- 
+  ces4_bay_asthma_log %>% 
+  st_drop_geometry() %>% 
+  left_join(ces4_bay_pm25_log, by = c("Census Tract"))
+
+ggplot(
+  data = bay_PM_asthma_log,
+  aes(
+      x = log_PM,
+      y = log_asthma
+    )
+) +
+  geom_point() +
+  geom_smooth(method = "lm")
+```
+While there is still a large concentration in the middle of the plot, the data seems to be more centered, which means that the best-fit line of the log graph also seems to be more centered and have an overall even, spread out distribution.
+```{r}
+model <- lm(log(Asthma) ~ PM2.5, bay_PM_asthma_log)
+
+summary(model)
+```
+Overall, there is a positive relationship between the PM2.5 levels and log of Asthma cases. Since the R^2 value is 0.1003, there is a slightly stronger correlation than the original plot. 10.03% of the variation in Asthma is explained by the variation in PM2.5. Also, the line of best fit indicates that an increase of 1 in PM2.5 concentration  is associated with an increase of 0.35 in the log of Asthma cases. 
