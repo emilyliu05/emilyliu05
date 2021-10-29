@@ -87,7 +87,7 @@ bay_pums <-
   ) %>% 
   filter(PUMA %in% bay_pumas$PUMACE10)
 ```
-This gets the data on internet access, food stamps and total family income
+This gets the data on internet access, food stamps and total family income. I chose these variables because low-income families are more likely to be on food stamps and have limited internet access than wealthier families (all 3 factors are related)
 ```{r}
 bay_pums_example <-
   bay_pums %>% 
@@ -144,5 +144,5 @@ leaflet() %>%
     pal = pums_pal,
     values = ~perc_nointernet_foodstamps_lowfaminc,
     title = "% households on foodstamps<br>without internet access making<br>less than $100K as a family"
-  ) %>%
+  ) #%>%
 ```
