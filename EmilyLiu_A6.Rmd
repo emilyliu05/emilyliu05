@@ -1,0 +1,154 @@
+---
+title: "EmilyLiu_A6"
+author: "Emily Liu"
+date: "10/30/2021"
+output: html_document
+---
+
+```{r}
+library(censusapi)
+library(tidyverse)
+library(tigris)
+library(survey)
+library(sf)
+library(leaflet)
+library(mapview)
+#knitr::opts_chunk$set(echo = F, warning = F, message = F)
+
+Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+```
+
+
+```{r}
+# pums_2019_1yr <- getCensus(
+#   name = "acs/acs1/pums",
+#   vintage = 2019,
+#   region = "public use microdata area:*",
+#   regionin = "state:06",
+#   vars = c(
+#     "SERIALNO",
+#     "SPORDER",
+#     "PWGTP",
+#     "WGTP",
+#     "YBL",
+#     "BLD",
+#     "TEN",
+#     "MV",
+#     "HINCP",
+#     "AGEP"
+#   )
+# )
+# saveRDS(pums_2019_1yr, "a6_pums.rds")
+pums_2019_1yr <- readRDS("a6_pums.rds")
+
+ca_pumas <-
+  pumas("CA", cb = T, progress_bar = F)
+
+sf_boundary <-
+  counties("CA", cb = T, progress_bar = F) %>%
+  filter(NAME == "San Francisco")
+
+sf_pumas <-
+  ca_pumas %>% 
+  st_centroid() %>% 
+  .[sf_boundary, ] %>% 
+  st_drop_geometry() %>% 
+  left_join(ca_pumas %>% select(GEOID10)) %>% 
+  st_as_sf()
+
+mapview(sf_pumas)
+
+sf_pums <- pums_2019_1yr %>% 
+  mutate(
+    PUMA = str_pad(public_use_microdata_area,5,"left","0")
+  ) %>% 
+  filter(PUMA %in% sf_pumas$PUMACE10)
+```
+
+
+```{r}
+sf_pums_clean <- sf_pums %>%
+  mutate(
+    YBL = as.numeric(YBL),
+    AGEP = as.numeric(AGEP),
+    HINCP = as.numeric(HINCP)
+  ) %>% 
+  filter(YBL %in% 1:3) %>% #filters for houses before 1960
+  arrange(AGEP) %>%
+  group_by(SERIALNO) %>%
+  summarize_all(first) %>%
+  mutate(
+    LEADRISK = ifelse(
+      AGEP <= 6 & HINCP <= 90000, #adds leadrisk variable for age less than 6 and household income less than 90,000
+      1,
+      0
+   ) 
+  )
+
+#changes columns into factors 
+sf_pums_factors <- sf_pums_clean %>%
+  mutate(across(c(BLD, TEN, MV, PUMA)))
+
+model <- lm(LEADRISK ~ BLD + TEN + MV + PUMA, sf_pums_factors)
+
+logit_model <- glm(
+  LEADRISK ~ BLD + TEN + MV + PUMA,
+  family = quasibinomial(),
+  data = sf_pums_factors
+)
+
+summary(logit_model)
+
+exp(coef(logit_model))
+
+sample_predict <- sample_n(sf_pums_factors, 1)
+#data.frame(BLD = 6, TEN = 3, MV = 4, PUMA = 07502)
+
+predict(logit_model, sample_predict, type = "response")
+```
+6.5 assignment
+```{r}
+sf_pums_predicted <- sf_pums_factors %>%
+  mutate(
+    PREDICT = predict(logit_model, sf_pums_factors, type = "response")
+  )
+
+#generates the prediction for each row
+summary_2x2 <-
+  sf_pums_predicted %>% 
+  mutate(
+    LEADRISK = ifelse(
+      LEADRISK == 1, 
+      "Yes (Leadrisk)", 
+      "No (Leadrisk)"
+    ), 
+    #WGTP in YES column if predict is greater than 10% 
+    YES = ifelse(
+      PREDICT >= .1,
+      as.numeric(WGTP),
+      0
+    ),
+    #WGTP in NO column if predict is less than 10%
+    NO = ifelse(
+      PREDICT <= 0.1,
+      as.numeric(WGTP),
+      0
+    )) %>% 
+  #consolidates YES, NO, YES(LEADRISK) AND NO(LEADRISK) into a 2x2
+  group_by(LEADRISK) %>%
+  summarize(
+      Predicted_yes =
+        sum(YES),
+      Predicted_no = 
+        sum(NO)
+    )
+```
+Households that exceeded the threshold score generally had lower BLD values (mobile or one-family homes), had 3 for the TEN value (renters) and higher MV values (moved into the home longer ago). 
+
+Roughly how many would they mail out based on their threshold score? Total predicted_yes = 6,182
+
+What percentage of postcards do you expect to actually go to low-income households with children? True positive/all positive = 867/6,182 = 14%
+
+What percentage of all at-risk children are likely to be reached? predicted_yes/Total yes(predicted) = 867/(867+4501) = 867/5,368 = 16.2%
+
+To improve my strategy, I could include more variables in the regression to get a more accurate regression and prediction.
