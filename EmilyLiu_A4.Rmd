@@ -9,6 +9,7 @@ output: html_document
 library(tidyverse) 
 library(censusapi) 
 Sys.setenv(CENSUS_KEY = "c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+knitr::opts_chunk$set(echo = F, warning = F, message = F)
 ```
 
 ```{r}
@@ -117,6 +118,8 @@ bay_educ_race_2019 %>%
       reverse = T
     )
   )
+
+#
 ```
 #6.5 point assignment attempt
 ```{r}
@@ -229,10 +232,48 @@ colnames(bay_total) <- c("education", "total", "hispanic", "white")
 
 bay_total <- bay_total %>% 
   mutate(
+<<<<<<< HEAD:Assignment 4/EmilyLiu_A4.Rmd
+   nonwhitenonlatinx = total - hispanic - white
+ ) %>% select(-total) 
+
+#colnames(bay_total) <- c("education", "Hispanic or Latino", "White alone", "Not white, not Hispanic") 
+
+bay_nonwhite <- bay_change %>%
+   select(-2) %>%
+   select(-2) %>%
+   select(-2) %>%
+   mutate(
+     race= "Not White, not Latino"
+   )
+ 
+bay_total <- 
+   bay_educ_total_2019 %>% 
+   group_by(education, race) %>% 
+   summarize(estimate = sum(estimate)) %>%
+   rbind(bay_white_latinx_total) %>%
+   rbind(bay_change)
+ 
+bay_total[is.na(bay_total)] <- 0 
+ 
+bay_total <- bay_total %>%
+   mutate(
+    estimate = estimate - nonwhite
+  )%>%
+   select(-4)
+ 
+bay_final = bay_total[-c(1, 2, 3, 4),]
+
+bay_race_total <-
+   bay_final %>% 
+   group_by(race) %>% 
+   summarize(estimate = sum(estimate)) %>% 
+   mutate(education = "Total")
+=======
    nonwhitenonlatinx = (total - hispanic - white)
  ) %>% select(-total) 
 
 colnames(bay_total) <- c("education", "Hispanic or Latino", "White alone", "Not white, not Hispanic") 
+>>>>>>> parent of d3bee29 (update):EmilyLiu_A4.Rmd
 
 bay_total <-
   ggplot() +
