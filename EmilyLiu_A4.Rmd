@@ -119,7 +119,7 @@ bay_educ_race_2019 %>%
     )
   )
 
-#
+
 ```
 #6.5 point assignment attempt
 ```{r}
@@ -128,55 +128,6 @@ acs_vars_2019_1yr <-
     name = "2019/acs/acs1",
     type = "variables"
   )
-
-race_categories_latinx <- c(
-  "White alone",
-  "Hispanic or Latino"
-)
-
-#only loops through white and latinx 
-bay_educ_latinx_2019 <-
-  1:2 %>% 
-  map_dfr(function(x){
-    
-    getCensus(
-      name = "acs/acs5",
-      vintage = "2019",
-      region = "county:001",
-      regionin = "state:06",
-      vars = paste0("group(C15002",LETTERS[x],")")
-    ) %>% 
-      select(ends_with("E") & -c(state, NAME)) %>% 
-      summarize_all(sum) %>% 
-      pivot_longer(
-        everything(),
-        names_to = "name",
-        values_to = "estimate"
-      ) %>% 
-      left_join(
-        acs_vars_2019_5yr %>% 
-          select(name, label)
-      ) %>% 
-      #assigns the education level from acs_cars_2019_5yr to the education label 
-      separate(
-        label,
-        into = c(NA, NA, NA, "education"),
-        sep = "!!"
-      ) %>% 
-      select(-name) %>% 
-      filter(!is.na(education)) %>% #checks if rows are empty in education column and gets rid of them
-      mutate(
-        race = race_categories_latinx[x]
-      )
-  })
-```
-This gets the total from C15002 from the acs 1 year table
-```{r}
-bay_white_latinx_total <-
-  bay_educ_latinx_2019 %>% 
-  group_by(race, education) %>% 
-  summarize(estimate = sum(estimate)) #%>% 
-  #mutate(education = "total")
 
 bay_educ_total_2019 <-
   getCensus(
@@ -205,7 +156,7 @@ bay_educ_total_2019 <-
   select(-name) %>%
   filter(!is.na(education)) %>%
    mutate (
-     race = "total",
+     ethnicity = "total",
      #groups the education attainment categories into the same as above 
      education = case_when(
         education %in% c("Less than 9th grade", "9th to 12th grade, no diploma") ~ "Less than high school diploma",
@@ -213,96 +164,118 @@ bay_educ_total_2019 <-
         education %in% c("Some college, no degree", "Associate's degree") ~ "Some college or associate's degree",
         education %in% c("Bachelor's degree", "Graduate or professional degree") ~ "Bachelor's degree or higher"
      )
-   )
+   ) %>%
+  group_by(education, ethnicity) %>% 
+  summarize_all(sum)
 
-#binds white alone, latinx alone to the table with total population 
-bay_total <-
-  bay_educ_total_2019 %>% 
-  group_by(race, education) %>% 
-  summarize(estimate = sum(estimate)) %>% 
-  rbind(bay_white_latinx_total) %>%
-  #subtracts white and latinx from total to get non-white and non-latinx)
-  pivot_wider(
+census_ethnicity_categories <-
+  data.frame(
+    letter = c("H","I"),
+    category = c(
+      "White alone",
+      "Hispanic or Latino"
+    )
+  )
+
+bay_education_ethnicity_2019 <-
+  1:2 %>% 
+  map_dfr(function(x){
+    getCensus(
+    name = "acs/acs1",
+    vintage = "2019",
+    region = "county:001", #Contra Costa county
+    regionin = "state:06",
+    vars = "group(C15002)" 
+  ) %>%
+  select(ends_with("E") & -c(state, NAME)) %>%
+  #summarize_all(sum) %>%
+  pivot_longer(
     everything(),
-    names_from = "race",
+    names_to = "name",
+    values_to = "estimate"
+  ) %>%
+  left_join(
+    acs_vars_2019_1yr %>%
+      select(name, label)
+   ) %>%
+  separate (
+    label,
+    into = c(NA, NA, NA, "education"),
+    sep = "!!"
+  ) %>%
+  select(-name) %>%
+  filter(!is.na(education)) %>%
+   mutate (
+     ethnicity = census_ethnicity_categories$category[x])
+  }) %>% 
+  group_by(education, ethnicity) %>% 
+  summarize_all(sum) %>% 
+  rbind(bay_educ_total_2019) %>% 
+  pivot_wider(
+    names_from = "ethnicity",
     values_from = "estimate"
- )
-
-colnames(bay_total) <- c("education", "total", "hispanic", "white") 
-
-bay_total <- bay_total %>% 
+  ) %>% 
   mutate(
-<<<<<<< HEAD:Assignment 4/EmilyLiu_A4.Rmd
-   nonwhitenonlatinx = total - hispanic - white
- ) %>% select(-total) 
+    'Not White, not Latinx' = total - 'Hispanic or Latino' - 'White alone'
+  ) %>% 
+  select(ends_with("E")) %>% 
+  pivot_longer(
+    -c(state, NAME),
+    names_to = "name",
+    values_to = "estimate"
+  )
+```
+This gets the total from C15002 from the acs 1 year table
+```{r}
+```
 
-#colnames(bay_total) <- c("education", "Hispanic or Latino", "White alone", "Not white, not Hispanic") 
-
-bay_nonwhite <- bay_change %>%
-   select(-2) %>%
-   select(-2) %>%
-   select(-2) %>%
-   mutate(
-     race= "Not White, not Latino"
-   )
- 
-bay_total <- 
-   bay_educ_total_2019 %>% 
-   group_by(education, race) %>% 
-   summarize(estimate = sum(estimate)) %>%
-   rbind(bay_white_latinx_total) %>%
-   rbind(bay_change)
- 
-bay_total[is.na(bay_total)] <- 0 
- 
-bay_total <- bay_total %>%
-   mutate(
-    estimate = estimate - nonwhite
-  )%>%
-   select(-4)
- 
-bay_final = bay_total[-c(1, 2, 3, 4),]
-
-bay_race_total <-
-   bay_final %>% 
-   group_by(race) %>% 
-   summarize(estimate = sum(estimate)) %>% 
-   mutate(education = "Total")
-=======
-   nonwhitenonlatinx = (total - hispanic - white)
- ) %>% select(-total) 
-
-colnames(bay_total) <- c("education", "Hispanic or Latino", "White alone", "Not white, not Hispanic") 
->>>>>>> parent of d3bee29 (update):EmilyLiu_A4.Rmd
-
-bay_total <-
+```{r}
+bay_education_ethnicity_2019_stacked <-
+  ___ %>%
+  rbind(
+    ___ %>%
+      group_by(___) %>% 
+      summarize(estimate = sum(___)) %>% 
+      mutate(education = "Total")
+  ) %>% 
   ggplot() +
   geom_bar(
     aes(
-      x = education %>% factor(levels = rev(c("Total",unique(bay_total$education)))),
+      x = education %>% factor(levels = rev(c(
+        "Total",
+        "Less than high school diploma",
+        "High school graduate (includes equivalency)",
+        "Some college or associate's degree",
+        "Bachelor's degree or higher"
+      ))),
       y = "Hispanic or Latino", "White alone", "Not white, not Hispanic",
-      fill = race %>% factor(levels = rev(unique(bay_total$race)))
+      fill = race %>% factor(levels = rev(c(
+        "Latinx",
+        "White, not Latinx",
+        "Not White, not Latinx"
+      )))
     ),
     stat = "identity",
-    position = "fill"
+    position = "stack"
   ) +
   labs(
-    x = "Educational Attainment",
-    y = "Proportion of people over 25 years",
-    title = "Contra Costa Educational Attainment by Race",
+    x = "Educational attainment",
+    y = "Population 25 years or older",
+    title = "Bay Area educational attainment by ethnicity",
     fill = "Ethnicity"
   ) +
   coord_flip() +
   theme(
     legend.position = "bottom",
     legend.direction = "vertical"
-  )  +
+  ) +
   guides(
     fill = guide_legend(
       reverse = T
     )
   )
-```
-
-```{r}
+bay_education_ethnicity_2019_fill <-
+  ___
+bay_education_ethnicity_2019_stacked
+bay_education_ethnicity_2019_fill
 ```
