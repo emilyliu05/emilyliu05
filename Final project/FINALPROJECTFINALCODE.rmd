@@ -1,0 +1,1164 @@
+---
+title: "Final Project"
+author: "Sydney Schmitter and Emily Liu"
+date: "12/09/2021"
+runtime: shiny
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: rows
+    vertical_layout: scroll
+---
+```{r global, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE) #, eval = FALSE
+```
+
+Background and Methodology
+================================
+
+### Background and Methodology
+
+Final Project Title: Assessing Groundwater Threat Risk by Race and Time in San Francisco County
+
+Rising sea levels lead to saltwater intrusion in the groundwater table. This can lead to underground pollutants, like toxic chemicals and gases, infiltrating into the water as it’s brought up. A new study from UC Berkeley shows that groundwater toxins reaching the surface have the potential to harm Bay Area residents through seepage into homes and businesses during storms, high water events, and through sea-level rise. Groundwater contamination is particularly detrimental for the environment and human health. Research shows that groundwater toxins are shown to pose serious health impacts on humans, and in particular, heavy metals such as arsenic and lead, have been associated with possible occurrences of preterm birth and cancer. Furthermore, redlined communities with large minority populations are disproportionately subject to environmental injustice and as a result, these communities often suffer from exacerbated public health concerns. For example, Superfund sites are generally located in proximity to these communities and rising sea levels can further increase the toxin infiltration near these areas. 
+
+For our final project, we analyzed groundwater threat risk in San Francisco County with an emphasis on analyzing how groundwater threat risk interacts with racial census data over time. Our analysis utilizes data from the California Communities Environmental Health Screening Tool, also known as CalEnviroScreen, which is an index and science-based mapping tool used to identify areas in California that are the most impacted by sources of pollution, and where people are the most vulnerable to the effects of pollution. CalEnviroScreen uses a variety of indicators, such as PM2.5 pollution and pesticide use to assess cumulative impacts to communities. 
+
+From CalEnviroScreen data, we utilize CalEnviroScreen Groundwater Threat data from the 3.0 and 4.0 Versions in our analysis. Groundwater threat scores in this data were compiled using the following methodology and rationale (link page 115), and higher groundwater threat scores are associated with a higher groundwater threat risk. The CalEnviroScreen 3.0 Version was released in January of 2017 and the CalEnviroScreen 4.0 Version was released in February of 2021. 
+
+Our analysis is comprised of these parts:
+
+1. First, we created a map using leaflet for groundwater threat risk scores per census tract for CalEnviroScreen 3.0 and 4.0 data, and analyzed how groundwater threat risk has changed from 2017 to 2021. 
+
+2. Next, we overlayed racial data per census tract on top of groundwater threat data per census tract using leaflet for both CalEnviroScreen 3.0 and 4.0 versions. We conducted an analysis on which racial groups appear to be the most impacted by groundwater threat risk in which census tract, and how groundwater threat risk by racial category has changed from 2017 to 2021. 
+
+3. We proceeded to conduct an equity analysis for groundwater contamination risk by racial category for CalEnviroScreen 3.0 (2017) and CalEnviroScreen 4.0 (2021). 
+
+4. We performed a simple linear regression analysis on the racial group that appeared to be the most affected by high groundwater threat risk for 2017 and 2021. 
+
+```{r}
+library(flexdashboard)
+library(tidyverse)
+library(leaflet)
+library(sf)
+library(plotly)
+library(shiny)
+library(tigris)
+library(mapview)
+library(readxl)
+library(ggplot2)
+library(censusapi)
+library(rmarkdown)
+
+calenviroscreenthree <- read.csv("calenviroscreen3.0.csv")
+calenviroscreenfour <- read_excel("calenviroscreen4.0.xlsx")
+
+calenviroscreenthreeplot <- calenviroscreenthree %>% select(
+    c(Census.Tract, Total.Population, California.County, Groundwater.Threats, ZIP)) %>% 
+  mutate(Version = "CalEnviroScreen 3.0")
+
+calenviroscreenthreeplot <- calenviroscreenthreeplot %>% 
+  mutate(Version = "CalEnviroScreen 3.0") %>%
+  filter(
+    California.County %in% c("San Francisco")
+  )
+
+calenviroscreenfourplot <- calenviroscreenfour %>% select(
+    c("Census Tract", "Total Population", "California County", "Groundwater Threats", "ZIP"))
+
+calenviroscreenfourplot <- calenviroscreenfourplot %>% 
+  rename(
+    Census.Tract = "Census Tract",
+    Total.Population = "Total Population",
+    California.County = "California County",
+    Groundwater.Threats = "Groundwater Threats",
+    ZIP = "ZIP"
+    ) %>% 
+  mutate(Version = "CalEnviroScreen 4.0") %>%
+  filter(
+    California.County %in% c("San Francisco")
+  )
+
+
+# calenviroscreencombined <- rbind(calenviroscreenfourplot, calenviroscreenthreeplot) %>% 
+#   filter(
+#     California.County %in% c("San Francisco")
+#   )
+
+```
+Groundwater Risks Data 
+================================
+
+Row {.tabset}
+--------------------------------
+
+### Groundwater Risks Data 
+In this first portion of our assignment, we analyze how groundwater threat risk has changed in San Francisco County from 2017 to 2020. 
+
+We noticed several differences in groundwater threat risk per census tract between the CalEnviroScreen 3.0 (2017) and the CalEnviroScreen 4.0 (2021) versions. 
+
+Notable increases in groundwater threat risk occurred in the following census tracts between 2017 and 2021:
+
+Census Tract: 94129 at the Presidio of San Francisco, Groundwater Risk increased from 15 to 34
+
+Census Tract: 93130 at Treasure Island, Groundwater Risk increased from 150 to 215
+
+Census Tract: 94124 at Bayview-Hunter’s Point, Groundwater Risk increased from 436 to 468
+
+Census Tract: 94121 at Point Lobos, Groundwater Risk increased from 9 to 26
+
+Census Tract: 94124 at Mission Bay, Groundwater Risk increased from 142 to 153
+
+There were cases of decreases in groundwater threat risk that occurred in several tracts between 2017 to 2021, but none of these decreases were notable. Overall, it appears that groundwater threat risk for San Francisco County has increased over time from 2017 to 2021.
+
+Next, we conducted an analysis on which racial groups appear to be the most impacted by groundwater threat risk in which census tract, and how groundwater threat risk by racial category has changed from 2017 to 2021. 
+
+### Plot
+
+```{r}
+#Next, we will create a spatial map of CalEnviroScreen groundwater exposure risk data for the 4.0 version using leaflet. We will then add a layers of racial composition per census tract to the map. 
+
+bay_county_name <- 
+  c(
+    "San Francisco"
+  )
+
+bay_tracts <-
+   tracts("CA", bay_county_name, cb = T, progress_bar = F)
+
+#spatial data; geoid is census tract number
+calenviroscreenfourplotnew <-
+  calenviroscreenfourplot %>% 
+  mutate(
+    GEOID = paste0("0", Census.Tract)
+  ) %>%
+    mutate(
+     GEOID = GEOID %>% as.character()
+  ) %>% 
+   left_join(
+     bay_tracts %>% select(GEOID),
+     by = c("GEOID" = "GEOID")
+   ) %>% 
+   st_as_sf() %>% 
+   st_transform(4326)
+
+calenviroscreenthreeplotnew <-
+  calenviroscreenthreeplot %>% 
+  mutate(
+    GEOID = paste0("0", Census.Tract)
+  ) %>%
+    mutate(
+     GEOID = GEOID %>% as.character()
+  ) %>% 
+   left_join(
+     bay_tracts,
+     by = c("GEOID" = "GEOID")
+   ) %>%
+   st_as_sf() %>%
+   st_transform(4326)
+
+res_pal <- colorNumeric(
+  palette = "Blues",
+  domain = 
+    c(0,155)
+)
+
+# res_pal2 <- colorNumeric(
+#   palette = "Purple",
+#   domain = 
+#     c(0,100)
+#)
+#Groundwater Threat Map
+leaflet() %>% 
+  addTiles() %>% 
+  addPolygons(
+    data = calenviroscreenfourplotnew,
+    group = "CES 4.0 Groundwater Threat",
+    fillColor = ~res_pal(Groundwater.Threats),
+    color = "white",
+    opacity = 0.2,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(Groundwater.Threats), 
+      " on the CalEnviroScreen 4.0 Groundwater Threat Scale in ",
+      ZIP
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )
+    ) %>% 
+    addPolygons(
+    data = calenviroscreenthreeplotnew,
+    group = "CES 3.0 Groundwater Threat",
+    fillColor = ~res_pal(Groundwater.Threats),
+    color = "white",
+    opacity = 0.2,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(Groundwater.Threats), 
+      " on the CalEnviroScreen 3.0 Groundwater Threat Scale in ",
+      ZIP
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+    addLayersControl(
+    baseGroups = c("CES 4.0 Groundwater Threat", "CES 3.0 Groundwater Threat"),
+    options = layersControlOptions(collapsed = FALSE))
+```
+
+Groundwater Threat by Racial Group Analysis
+================================
+
+Row {.tabset}
+--------------------------------
+
+### Groundwater Threat by Racial Group CES 4.0
+Next, we conducted an analysis on which racial groups appear to be the most impacted by groundwater threat risk in which census tract, and how groundwater threat risk by racial category has changed from 2017 to 2021. 
+
+From our analysis using map data, it appears that the White population in San Francisco County is not particularly affected by groundwater threat Risk. In fact, it seems that white populations in San Francisco County are clustered in the center of San Francisco and away from the bay. 
+
+Moving onto the Asian population in San Francisco, it appears that the Asian population is also not particularly affected by groundwater threat risk despite the relatively high Asian population in San Francisco County. On the other hand, the Pacific Islander Population and American Indian Population in San Francisco County does not seem to be impacted by groundwater threat risk due to their overall low populations in San Francisco.
+
+However, the Black population in San Francisco is subject to high levels of groundwater threat risk, specifically in the Mission Bay neighborhoods.
+
+We observed significant groundwater threat risk in the Bayview-Hunter’s Point and Mission Bay neighborhoods of San Francisco in our analysis. The racial composition of Bayview-Hunter’s Point in 2019 was 48% Asian, 25% Hispanic, 15% Black, 9% White, 2% Two-or-more-races, and less than 1% Pacific Islander. Compared to the overall Black population of San Francisco County, which averaged 5.5% of the population in 2019, Bayview-Hunter’s Point has a Black population three times the county’s average. When we looked a bit into the history of the Bayview-Hunter’s Point neighborhood, we found that Hunter’s Point is a historically redlined and economically disadvantaged community. For many years, Bayview-Hunter’s Point was the site of a Chinese shrimp-fishing community but, this community was evicted during World War II to make way for the Hunters Point Navy Base. Most housing in Bayview-Hunter’s Point was government barracks housing for shipyard workers from World War II, and were structurally unsound and unsafe for people to live in. Racially restrictive HOLC policy led Bayview-Hunter’s Point to become a neighborhood with a higher Black population when compared to the rest of San Francisco County, where they were systematically forced to live in this housing. Combined with increased groundwater threat risk, the Bayview-Hunter’s Point neighborhood will be subject to intense groundwater threat risk in the near future, which is an issue of environmental justice that will pose great implications on the adaptive capacity and health of the Bayview-Hunter’s Point community.
+
+The racial composition of the Mission Bay neighborhood is 38.5% Asian, 36.7% White, 13.8% Hispanic or Latino, 4.4% Black, 3.5% Two-or-more-races, and 1.4% Pacific Islander. The Mission Bay neighborhood was once a highly industrial community and Mission Bay was used as a place to deposit refuse from building projects and other debris. However, over time, the Mission Bay neighborhood has rapidly evolved into a wealthy neighborhood with the UCSF campus, luxury condos, and many biotechnology companies. From 2010 to 2020, the population of Mission Bay has increased by 200%. As the community continues to develop and grow, community will have to be mindful of how groundwater threat risk will impact their community in the coming years.
+
+
+### Groundwater Threat by Racial Group CES 3.0
+
+Compared to the 4.0 racial data, the general characteristics are the same, in that the area by Bayview-Hunter’s Point has more groundwater threat risk compared to the rest of San Francisco County. According to CES 3.0 data, there was a greater white population density in the Presidio area, although this didn't change groundwater threat risk much. It's also important to note that between 2017 and 2020, the block population density of Bayview-Hunter’s Point spread out to other surrounding tracts, and still yielded in the highest overlap of groundwater threat risk. Overall, the population density demographics did not change significantly, and the concentrations of higher groundwater threat largely stayed the same. 
+
+### CES 4.0  Data Map
+
+```{r}
+#Add layers of race from census data to this map; CES 4.0 came out in 2020 so we used census data
+Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+
+sfo_pop_2020 <-
+  getCensus(
+    name = "dec/pl",
+    vintage = 2020,
+    region = "block:*",
+    regionin = "state:06+county:075",
+    vars = "P1_001N"
+  ) %>%
+  transmute(
+    GEOID =
+      paste0(state,county,tract),
+    pop = P1_001N
+  )
+
+dec_vars_2020 <-
+  listCensusMetadata(
+    name = "2020/dec/pl",
+    type = "variables"
+  )
+
+sfo_pop_race_2020 <-
+  getCensus(
+    name = "dec/pl",
+    vintage = 2020,
+    region = "block:*",
+    regionin = "state:06+county:075",
+    vars = "group(P1)"
+  ) %>%
+  mutate(
+    block =
+      paste0(state,county,tract)
+  ) %>%
+  select(!c(GEO_ID,state,county,tract,NAME) & !ends_with(c("NA"))) %>%
+  pivot_longer(
+    ends_with("N"),
+    names_to = "name",
+    values_to = "estimate"
+  ) %>%
+  left_join(
+    dec_vars_2020 %>%
+      select(name, label)
+  ) %>%
+  select(-name) %>%
+  separate(
+    label,
+    into = c(NA,NA,"category1","category2"),
+    sep = "!!"
+  )
+
+
+sfo_pop_race_2020 <- sfo_pop_race_2020 %>%
+  mutate(
+    race = case_when(
+      category1 == "Population of two or more races:" & is.na(category2) ~ "Two or more races",
+      category1 == "Population of two or more races:" ~ "",
+      !is.na(category2) ~ category2,
+      TRUE ~ ""
+    )
+  )
+
+sfo_pop_race_2020 <- sfo_pop_race_2020 %>%
+  filter(race != "") %>%
+  select(block, race, pop = estimate
+  )
+
+sfo_pop_race_2020 <- sfo_pop_race_2020 %>%
+  rename(
+    GEOID = "block"
+    )
+
+
+racialdata <-
+  sfo_pop_race_2020 %>%
+    mutate(
+     GEOID = GEOID %>% as.character()
+  ) %>%
+   left_join(
+     calenviroscreenfourplotnew %>% select(GEOID),
+     by = c("GEOID" = "GEOID")
+   ) %>%
+    st_as_sf() %>%
+    st_transform(4326)
+
+whitedata <- racialdata %>%
+  filter(
+    race %in% c("White alone")
+  )
+
+asianalone <- racialdata %>%
+  filter(
+    race %in% c("Asian alone")
+  )
+
+blackalone <- racialdata %>%
+  filter(
+    race %in% c("Black or African American alone")
+  )
+
+pacificislanderalone <- racialdata %>%
+  filter(
+    race %in% c("Native Hawaiian and Other Pacific Islander alone")
+  )
+
+americanindian <- racialdata %>%
+  filter(
+    race %in% c("American Indian and Alaska Native alone")
+  )
+
+twoormore <- racialdata %>%
+  filter(
+    race %in% c("Two or more races")
+  )
+
+otherrace <- racialdata %>%
+  filter(
+    race %in% c("Some Other Race alone")
+  )
+
+res_pal2 <- colorNumeric(
+  palette = "Reds",
+  domain =
+    whitedata$pop
+)
+
+res_pal3 <- colorNumeric(
+  palette = "Greens",
+  domain =
+    asianalone$pop
+)
+
+res_pal4 <- colorNumeric(
+  palette = "Purples",
+  domain =
+    blackalone$pop
+)
+
+res_pal5 <- colorNumeric(
+  palette = "Blues",
+  domain =
+    pacificislanderalone$pop
+)
+
+res_pal6 <- colorNumeric(
+  palette = "Oranges",
+  domain =
+    americanindian$pop
+)
+
+
+#Create 4.0 Map
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(
+    data = whitedata,
+    fillColor = ~res_pal2(pop),
+    group="White Population Density",
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(pop),
+      " white pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )
+  ) %>%
+  addPolygons(
+    data = calenviroscreenfourplotnew,
+    group="Groundwater Threat Risk",
+    fillColor = ~res_pal(Groundwater.Threats),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(Groundwater.Threats),
+      " on the CES 4.0 Groundwater Threat Risk Indice"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+  addPolygons(
+    data = asianalone,
+    group="Asian Population Density",
+    fillColor = ~res_pal3(pop),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(pop),
+      " Asian alone pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+  addPolygons(
+    data = blackalone,
+    group="Black Population Density",
+    fillColor = ~res_pal4(pop),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(pop),
+      " Black alone pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+  addPolygons(
+    data = pacificislanderalone,
+    group="Pacific Islander Population Density",
+    fillColor = ~res_pal5(pop),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(pop),
+      " Pacific Islander alone pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+  addPolygons(
+    data = americanindian,
+    group="American Indian Population Density",
+    fillColor = ~res_pal6(pop),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(pop),
+      " American Indian alone pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+    addLayersControl(
+      overlayGroups = c("Groundwater Threat Risk"),
+      baseGroups = c("White Population Density", "Asian Population Density", "Black Population Density", "Pacific Islander Population Density", "American Indian Population Density"),
+      options = layersControlOptions(collapsed = FALSE)
+    )
+
+```
+```{r}
+```
+
+### CES 3.0  Data Map
+
+```{r}
+#CES 3.0 came out in 2017
+Sys.setenv(CENSUS_KEY="c8aa67e4086b4b5ce3a8717f59faa9a28f611dab")
+
+acs_vars_2017_5yr <-
+  listCensusMetadata(
+    name = "2017/acs/acs5",
+    type = "variables"
+  )
+
+sf_race_2017 <-
+  getCensus(
+    name = "acs/acs5",
+    vintage = "2017",
+    region = "block group:*",
+    regionin = "state:06+county:075",
+    vars = "group(B02001)" #B02001 is the total race by educational attainment
+  ) %>%
+  mutate(
+    GEOID =
+      paste0(state,county,tract,block_group)
+  ) %>%
+  select(!c(GEO_ID,state,county,tract,block_group,NAME) & !ends_with(c("EA","MA","M"))) %>%
+  rename(
+    'Totale' = "B02001_001E",
+    'White alone' = "B02001_002E",
+    'Black or African American alone' = "B02001_003E",
+    'American Indian and Alaska Native alone' = "B02001_004E",
+    'Asian alone' = "B02001_005E",
+    'Native Hawaiian and Other Pacific Islander alone' = "B02001_006E",
+    'Some other race alone' = "B02001_007E",
+    'Two or more race' = "B02001_008E",
+    'Two or more races Two races including Some other race' = "B02001_009E",
+    'Two or more races Two races excluding Some other race, and three or more race' = "B02001_010E",
+  ) %>%
+  pivot_longer(
+    ends_with("e"),
+    names_to = "race",
+    values_to = "estimate"
+  )  
+
+calenviroscreenthreeplotnew <-
+  calenviroscreenthreeplot %>% 
+  mutate(
+    GEOID = paste0("0", Census.Tract)
+  ) %>%
+    mutate(
+     GEOID = GEOID %>% as.character()
+  ) %>% 
+   left_join(
+     bay_tracts,
+     by = c("GEOID" = "GEOID")
+   ) %>%
+   st_as_sf() %>%
+   st_transform(4326)
+
+bay_cbgs <- block_groups("CA", "San Francisco", cb = T, progress_bar = F) 
+
+racialdata2 <-
+  sf_race_2017 %>%
+    mutate(
+     GEOID = GEOID %>% as.character()
+  ) %>%
+       left_join(
+    bay_cbgs %>% st_as_sf() %>% select(GEOID),
+    by = c("GEOID" = "GEOID")
+  ) %>%
+    st_as_sf() %>%
+    st_transform(4326) 
+
+whitedata <- racialdata2 %>%
+  filter(
+    race %in% c("White alone")
+  )
+
+asianalone <- racialdata2 %>%
+  filter(
+    race %in% c("Asian alone")
+  )
+
+blackalone <- racialdata2 %>%
+  filter(
+    race %in% c("Black or African American alone")
+  )
+
+pacificislanderalone <- racialdata2 %>%
+  filter(
+    race %in% c("Native Hawaiian and Other Pacific Islander alone")
+  )
+
+americanindian <- racialdata2 %>%
+  filter(
+    race %in% c("American Indian and Alaska Native alone")
+  )
+
+twoormore <- racialdata2 %>%
+  filter(
+    race %in% c("Two or more races")
+  )
+
+otherrace <- racialdata2 %>%
+  filter(
+    race %in% c("Some Other Race alone")
+  )
+
+res_pal2 <- colorNumeric(
+  palette = "Reds",
+  domain =
+    whitedata$estimate
+)
+
+res_pal3 <- colorNumeric(
+  palette = "Greens",
+  domain =
+    asianalone$estimate
+)
+
+res_pal4 <- colorNumeric(
+  palette = "Purples",
+  domain =
+    blackalone$estimate
+)
+
+res_pal5 <- colorNumeric(
+  palette = "Blues",
+  domain =
+    pacificislanderalone$estimate
+)
+
+res_pal6 <- colorNumeric(
+  palette = "Oranges",
+  domain =
+    americanindian$estimate
+)
+
+
+#Create 3.0 Map
+leaflet() %>%
+  addTiles() %>%
+  addPolygons(
+    data = whitedata,
+    fillColor = ~res_pal2(estimate),
+    group="White Population Density",
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(estimate),
+      " white pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )
+  ) %>%
+  addPolygons(
+    data = calenviroscreenthreeplotnew,
+    group="Groundwater Threat Risk",
+    fillColor = ~res_pal(Groundwater.Threats),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(Groundwater.Threats),
+      " on the CES 3.0 Groundwater Threat Risk Indice"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+  addPolygons(
+    data = asianalone,
+    group="Asian Population Density",
+    fillColor = ~res_pal3(estimate),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(estimate),
+      " Asian alone pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+  addPolygons(
+    data = blackalone,
+    group="Black Population Density",
+    fillColor = ~res_pal4(estimate),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(estimate),
+      " Black alone pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+  addPolygons(
+    data = pacificislanderalone,
+    group="Pacific Islander Population Density",
+    fillColor = ~res_pal5(estimate),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(estimate),
+      " Pacific Islander alone pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+  addPolygons(
+    data = americanindian,
+    group="American Indian Population Density",
+    fillColor = ~res_pal6(estimate),
+    color = "white",
+    opacity = 0.3,
+    fillOpacity = 0.8,
+    weight = 1,
+    label = ~paste0(
+      round(estimate),
+      " American Indian alone pop"
+    ),
+    highlightOptions = highlightOptions(
+      weight = 2,
+      opacity = 1
+    )) %>%
+    addLayersControl(
+      overlayGroups = c("Groundwater Threat Risk"),
+      baseGroups = c("White Population Density", "Asian Population Density", "Black Population Density", "Pacific Islander Population Density", "American Indian Population Density"),
+      options = layersControlOptions(collapsed = FALSE)
+    )
+```
+
+Equity Analysis
+================================
+
+Row {.tabset}
+--------------------------------
+
+### Equity Analysis CES 4.0
+
+In our next part of our project, we conducted an equity analysis for groundwater contamination risk by racial category for CalEnviroScreen 3.0 (2017) and CalEnviroScreen 4.0 (2021). 
+
+Our equity analysis using 2021 data yielded significant results. For the White population in San Francisco County, we found that the greatest proportion of the White population in San Francisco County lives in “Medium Risk” locations for groundwater threat risk, followed by “Low Risk” locations. However, very little of the White population in San Francisco County lives in a “High Risk” location for groundwater threat risk. 
+
+The greatest proportion of the Asian population in San Francisco County is likely to live in a “Low Risk” location for groundwater threat risk. The smallest proportion of the Asian population in San Francisco County lives in a “Medium Risk” location, and the second-largest proportion of the Asian population in San Franciso County lives in a “High Risk” groundwater threat risk location.
+
+The Native Hawaiian and Pacific Islander population was not represented in our equity analysis except for in “High Risk” groundwater threat risk locations, which demonstrates an elevated groundwater threat risk burden on the Native Hawaiian and Pacific Islander population in San Francisco County. The American Indian and Alaska Native population was equally represented across all groundwater threat risk levels.
+
+The most striking finding from our equity analysis was the groundwater threat risk burden on the Black population of San Francisco County. Black populations in San Francisco County are significantly less likely to live in “Medium Risk” and “Low Risk” locations within the county and a significant portion of the Black population in San Francisco lives in locations with high groundwater threat risk. This finding supports our findings from plotting groundwater contamination risk and racial census data using leaflet.  
+
+In our mapping and equity analysis, we noticed that the Black population of San Francisco County is subject to higher groundwater threat risk than other racial groups in the county.
+
+### Equity Analysis CES 3.0
+
+A noticeable change from the CES 3.0 and 4.0 data is that the equity analysis from CES 3.0 data indicates a higher proportion of 'Asian alone' people at a medium risk of groundwater threat risk and a lower proportion at a high risk. Across all levels of risk, the proportion of risk among 'Two or more races' increased from 2017 to 2020. Furthermore, 'Asian alone' and 'White alone' people consisted of the lowest proportion of low and medium risk in both 2017 and 2020, while 'Black alone' made up approximately at least 1/4 of the proportion of people at a high risk of groundwater threat risk. 
+
+### 4.0 Equity Analysis Plot
+
+```{r}
+#Next, we conducted an equity analysis by race for groundwater threat risk in San Francisco County with 4.0 data
+
+simplifiedrace <- racialdata %>%
+    mutate(
+     GEOID = GEOID
+  ) %>%
+  st_drop_geometry()  %>%
+  select(
+    c(GEOID, race, pop)
+  ) %>%
+  group_by(GEOID, race) %>%
+  summarize(Total.Population = sum(pop)) %>%
+  pivot_wider(
+    everything(),
+    names_from = "race",
+    values_from = "Total.Population"
+)
+
+
+raceriskdata <- simplifiedrace %>%
+   right_join(
+     calenviroscreenfourplotnew,
+     by = c("GEOID" = "GEOID")
+   )
+
+
+calenviroscreenfourrisk <- raceriskdata %>%
+  mutate(Threat.Risk = case_when(
+    between(Groundwater.Threats, 0, 20) ~ "Low Risk",
+    between(Groundwater.Threats, 20, 80.01) ~ "Medium Risk",
+    between(Groundwater.Threats, 20.01, 900) ~ "High Risk",
+  )) %>%
+  select(
+    c(Total.Population, Threat.Risk, "American Indian and Alaska Native alone", "Asian alone", "Black or African American alone", "Native Hawaiian and Other Pacific Islander alone", "Two or more races", "White alone")) %>%
+  group_by(Threat.Risk) %>%
+  summarize(
+    "Total Population" = sum(Total.Population),
+    "Asian alone" = sum(as.numeric(`Asian alone`), na.rm = T),
+    "Black or African American alone"  = sum(as.numeric(`Black or African American alone`), na.rm = T),
+    "American Indian and Alaska Native alone" = sum(as.numeric(`American Indian and Alaska Native alone`), na.rm = T),
+    "Native Hawaiian and Other Pacific Islander alone" = sum(as.numeric(`Native Hawaiian and Other Pacific Islander alone`), na.rm = T),
+    #"Some Other Race alone" = sum(as.numeric(`Some Other Race alone`), na.rm = T),
+    "Two or more races" = sum(as.numeric(`Two or more races`), na.rm = T),
+    "White alone" = sum(as.numeric(`White alone`), na.rm = T),
+  ) %>%
+  select(-2) 
+
+mutatedrisk <- calenviroscreenfourrisk %>%
+  pivot_longer(
+    !Threat.Risk,
+    names_to = "races",
+    values_to = "estimate"
+      )
+
+mutatedrisk %>%
+  ggplot() +
+  geom_bar(
+    aes(
+      x = Threat.Risk  %>% factor(levels = rev(c("Total",c("Low Risk", "Medium Risk", "High Risk")))),
+      y = estimate,
+      fill = races %>% factor(levels = rev(unique(mutatedrisk$races)))
+    ),
+    stat = "identity",
+    position = "fill"
+  ) +
+  labs(
+    x = "Groundwater Threat Risk",
+    y = "Proportion of population",
+    title = "San Francisco County Groundwater Threat Risk by Race",
+    fill = "Race"
+  ) +
+  coord_flip() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  )  +
+  guides(
+    fill = guide_legend(
+      reverse = T
+    )
+  )
+
+```
+
+### 3.0 Equity Analysis Plot
+
+```{r}
+#Next, we conducted an equity analysis by race for groundwater threat risk in San Francisco County with 3.0 data
+
+bay_cbgsequityanalysis <- block_groups("CA", "San Francisco", cb = T, progress_bar = F) %>%
+  mutate(
+    GEOID =
+      paste0(STATEFP,COUNTYFP,TRACTCE)
+  )
+
+newsf_race_2017 <-
+  getCensus(
+    name = "acs/acs5",
+    vintage = "2017",
+    region = "block group:*",
+    regionin = "state:06+county:075",
+    vars = "group(B02001)" #B02001 is the total race by educational attainment
+  ) %>%
+  mutate(
+    GEOID =
+      paste0(state,county,tract)
+  ) %>%
+  select(!c(GEO_ID,state,county,tract,NAME) & !ends_with(c("EA","MA","M"))) %>%
+  rename(
+    'Totale' = "B02001_001E",
+    'White alone' = "B02001_002E",
+    'Black or African American alone' = "B02001_003E",
+    'American Indian and Alaska Native alone' = "B02001_004E",
+    'Asian alone' = "B02001_005E",
+    'Native Hawaiian and Other Pacific Islander alone' = "B02001_006E",
+    'Some other race alone' = "B02001_007E",
+    'Two or more race' = "B02001_008E",
+    'Two or more races Two races including Some other race' = "B02001_009E",
+    'Two or more races Two races excluding Some other race, and three or more race' = "B02001_010E",
+  ) %>%
+  pivot_longer(
+    ends_with("e"),
+    names_to = "race",
+    values_to = "estimate"
+  )  
+
+racialdataequityanalysis <-
+  newsf_race_2017 %>%
+    mutate(
+     GEOID = GEOID %>% as.character()
+  ) %>%
+       left_join(
+    bay_cbgsequityanalysis %>% st_as_sf() %>% select(GEOID),
+    by = c("GEOID" = "GEOID")
+  ) %>%
+    st_as_sf() %>%
+    st_transform(4326) 
+
+
+raceriskdata2 <- racialdataequityanalysis %>%
+  mutate(
+     GEOID = GEOID
+  ) %>%
+  st_drop_geometry()  %>%
+  select(
+    c(GEOID, race, estimate)
+  ) %>%
+  group_by(GEOID, race) %>%
+  summarize(Total.Population = sum(estimate)) %>%
+  pivot_wider(
+    everything(),
+    names_from = "race",
+    values_from = "Total.Population"
+) %>%
+   left_join(
+     calenviroscreenthreeplotnew,
+     by = c("GEOID" = "GEOID")
+   )
+
+
+calenviroscreenthreerisk <- raceriskdata2 %>%
+  mutate(Threat.Risk = case_when(
+    between(Groundwater.Threats, 0, 20) ~ "Low Risk",
+    between(Groundwater.Threats, 20, 80.01) ~ "Medium Risk",
+    between(Groundwater.Threats, 20.01, 900) ~ "High Risk",
+  )) %>%
+  select(
+    c(Totale, Threat.Risk, "American Indian and Alaska Native alone", "Asian alone", "Black or African American alone", "Native Hawaiian and Other Pacific Islander alone", "Two or more race", "White alone")) %>%
+  group_by(Threat.Risk) %>%
+  summarize(
+    "Total Population" = sum(Totale),
+    "Asian alone" = sum(as.numeric(`Asian alone`), na.rm = T),
+    "Black or African American alone"  = sum(as.numeric(`Black or African American alone`), na.rm = T),
+    "American Indian and Alaska Native alone" = sum(as.numeric(`American Indian and Alaska Native alone`), na.rm = T),
+    "Native Hawaiian and Other Pacific Islander alone" = sum(as.numeric(`Native Hawaiian and Other Pacific Islander alone`), na.rm = T),
+    "Two or more races" = sum(as.numeric(`Two or more race`), na.rm = T),
+    "White alone" = sum(as.numeric(`White alone`), na.rm = T),
+  ) %>%
+  select(-2)
+
+calenviroscreenthreerisk <- calenviroscreenthreerisk[-c(4),] 
+
+mutatedrisk2 <- calenviroscreenthreerisk %>%
+  pivot_longer(
+    !Threat.Risk,
+    names_to = "races",
+    values_to = "estimate"
+      )
+
+mutatedrisk2 %>%
+  ggplot() +
+  geom_bar(
+    aes(
+      x = Threat.Risk  %>% factor(levels = rev(c("Total",c("Low Risk", "Medium Risk", "High Risk")))),
+      y = estimate,
+      fill = races %>% factor(levels = rev(unique(mutatedrisk2$races)))
+    ),
+    stat = "identity",
+    position = "fill"
+  ) +
+  labs(
+    x = "Groundwater Threat Risk",
+    y = "Proportion of population",
+    title = "San Francisco County Groundwater Threat Risk by Race",
+    fill = "Race"
+  ) +
+  coord_flip() +
+  theme(
+    legend.position = "bottom",
+    legend.direction = "vertical"
+  )  +
+  guides(
+    fill = guide_legend(
+      reverse = T
+    )
+  )
+
+```
+
+Linear Regression Analysis
+================================
+
+Row {.tabset}
+--------------------------------
+
+### Linear Regression CES 4.0
+
+We conducted a simple linear regression analysis for the percent Black population in San Francisco County and Groundwater Threat Risk for 2017 and 2020. 
+
+CES 4.0 Linear Regression Analysis Results:
+
+ Residuals:
+    Min      1Q  Median      3Q     Max
+ -14.447  -3.576  -2.721   1.877  43.930 
+ 
+ Coefficients:
+                     Estimate Std. Error  t value Pr(>|t|)
+ (Intercept)          4.65111    0.59365   7.835 7.16e-13 ***
+ 
+ Groundwater.Threats  0.07463    0.01371   5.445 2.01e-07 ***
+
+ Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+ 
+ Residual standard error: 7.041 on 154 degrees of freedom
+ 
+ Multiple R-squared:  0.1614,	Adjusted R-squared:  0.156 
+ 
+ F-statistic: 29.65 on 1 and 154 DF,  p-value: 2.006e-07
+
+After looking at the summary of our model above, we first noticed that residuals are generally centered around 0, and although they do not have a roughly symmetrical distribution, we thought that the distribution was enough for our analysis. We then looked to the slope coefficient, or regression coefficient, which represents the mean change in the response variable, Groundwater Threat Risk, for one unit of change in the predictor variable, the Percent Black Population. For every one increase in x (Groundwater Threat Risk), there is an exp(0.07463), or 1.077 increase in y (Percent Black Population). Finally, I looked at the R-squared value for the linear regression analysis, which is a measure of the shared variance between x and y values. Variation in Groundwater Threat Risk explains 16.14% of the variation in the Percent Black Population. The p-value for our analysis is extremely small and below .05, which leads us to reject the null hypothesis.
+
+### Linear Regression CES 3.0
+
+CES 3.0 Linear Regression Analysis Results:
+
+Residuals:
+     Min      1Q  Median      3Q     Max
+ -12.856  -4.330  -2.714   1.349  61.100
+
+ Coefficients:
+                    Estimate Std. Error  t value Pr(>|t|)
+ (Intercept)          5.04983    0.63916   7.901 2.06e-13 ***
+ 
+ Groundwater.Threats  0.12182    0.01675   7.275 8.49e-12 ***
+ Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+ Residual standard error: 8.509 on 193 degrees of freedom
+ 
+ Multiple R-squared:  0.2152,	Adjusted R-squared:  0.2111
+ 
+ F-statistic: 52.92 on 1 and 193 DF,  p-value: 8.485e-12
+ 
+
+After looking at the summary of our model above, we first noticed that residuals, similarly to the 4.0 data, are generally centered around 0, and although they do not have a roughly symmetrical distribution, we thought that the distribution was enough for our analysis. We then looked to the slope coefficient, or regression coefficient, which represents the mean change in the response variable, Groundwater Threat Risk, for one unit of change in the predictor variable, the Percent Black Population. For every one increase in x (Groundwater Threat Risk), there is an exp(.12182), or 1.13 increase in y (Percent Black Population). Finally, I looked at the R-squared value for the linear regression analysis, which is a measure of the shared variance between x and y values. Variation in Groundwater Threat Risk explains 21.52% of the variation in the Percent Black Population, which is 5.38% higher than our 4.0 linear regression analysis. The p-value for our analysis is extremely small, below that of the 4.0 linear regression analysis and below .05, which leads us to reject the null hypothesis.
+
+### Scatter Plot, CES 4.0
+
+```{r}
+#We noticed in our last two data analysis that black populations are generally more at risk to groundwater threats. We conducted a simple regression looking at the percent black population per tract and groundwater threat risk.
+
+regressiondata <-
+  raceriskdata  %>%
+  select(
+    c(Total.Population, Groundwater.Threats, "American Indian and Alaska Native alone", "Asian alone", "Black or African American alone", "Native Hawaiian and Other Pacific Islander alone", "Some Other Race alone", "Two or more races", "White alone")) %>%
+  mutate(Total.Population = (`American Indian and Alaska Native alone` + `Asian alone` + `Black or African American alone` + `Native Hawaiian and Other Pacific Islander alone` + `Some Other Race alone` + `Two or more races` + `White alone`)) %>%
+  mutate(Percent.black = (`Black or African American alone`/Total.Population)*100)%>%
+  na.omit(raceriskdata)
+
+
+#plots the data as scatter plot for groundwater risk by percent of POC in each tract
+ggplot() +
+  geom_point(
+    data = regressiondata,
+    aes(
+      x = Groundwater.Threats,
+      y = Percent.black
+    )
+  ) +
+  labs(
+    title = "Scatterplot for Groundwater Risk by Percent Black Population, CalEnviroScreen 4.0" )
+```
+
+### Regression Plot, CES 4.0
+
+```{r}
+#adds regression line and line of best fit to the scatter plot
+
+slope <- 0
+yintercept <- mean(regressiondata$Percent.black)
+best_fit_candidate <- slope * regressiondata$Groundwater.Threats + yintercept
+
+ggplot(
+  data = regressiondata,
+  aes(
+      x = Groundwater.Threats,
+      y = Percent.black
+    )
+) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_line(
+    aes(
+      x = regressiondata$Groundwater.Threats,
+      y = best_fit_candidate
+    ),
+    color = "red",
+    size = 1
+  )
+
+#regression analysis calculations
+model <- lm(Percent.black ~ Groundwater.Threats, regressiondata)
+#summary(model)
+```
+
+### Scatter Plot, CES 3.0
+
+```{r}
+#regression plot for CES 3.0 data
+regressiondata2 <-
+  raceriskdata2  %>%
+  select(
+    c(Totale, Groundwater.Threats, "American Indian and Alaska Native alone", "Asian alone", "Black or African American alone", "Native Hawaiian and Other Pacific Islander alone", "Two or more race", "White alone")) %>%
+  mutate(Totale = (`American Indian and Alaska Native alone` + `Asian alone` + `Black or African American alone` + `Native Hawaiian and Other Pacific Islander alone` + `Two or more race` + `White alone`)) %>%
+  mutate(Percent.black = (`Black or African American alone`/Totale)*100)%>%
+  na.omit(raceriskdata2)
+
+
+#plots the data as scatter plot for groundwater risk by percent of POC in each tract
+ggplot() +
+  geom_point(
+    data = regressiondata2,
+    aes(
+      x = Groundwater.Threats,
+      y = Percent.black
+    )
+  ) +
+  labs(
+    title = "Scatterplot for Groundwater Risk by Percent Black Population, CalEnviroScreen 3.0" )
+```
+
+### Regression Plot, CES 3.0 
+
+```{r}
+#adds regression line and line of best fit to the scatter plot
+
+slope <- 0
+yintercept <- mean(regressiondata2$Percent.black)
+best_fit_candidate <- slope * regressiondata2$Groundwater.Threats + yintercept
+
+ggplot(
+  data = regressiondata2,
+  aes(
+      x = Groundwater.Threats,
+      y = Percent.black
+    )
+) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  geom_line(
+    aes(
+      x = regressiondata2$Groundwater.Threats,
+      y = best_fit_candidate
+    ),
+    color = "red",
+    size = 1
+  )
+
+#regression analysis calculations
+model <- lm(Percent.black ~ Groundwater.Threats, regressiondata2)
+#summary(model)
+```
